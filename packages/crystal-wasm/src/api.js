@@ -6,6 +6,7 @@
 import { resolveAssetSource } from './assets.js';
 import { compileAndRun, stripAnsi } from './engine.js';
 import { loadAssets } from './loader.js';
+import { GC_NONE, validateGc } from './gc.js';
 
 export function createApi({ packaged, inflate }) {
 	/**
@@ -26,6 +27,7 @@ export function createApi({ packaged, inflate }) {
 	 *   lld it already has instead of fetching a second copy. It stays the caller's:
 	 *   `dispose()` never releases it, and the sysroot libraries still come from here.
 	 * @param {string[]} [options.compileArgs] - extra `crystal build` flags.
+	 * @param {'none'|'boehm-experimental'} [options.gc='none'] - GC for generated programs.
 	 * @param {string[]} [options.args] - default program argv.
 	 * @param {(fraction: number) => void} [options.onProgress] - asset loading, 0 to 1.
 	 * @param {(text: string, what: {source: string, stream: string, stage: string}) => void}
@@ -42,6 +44,8 @@ export function createApi({ packaged, inflate }) {
 	 *   status line.
 	 */
 	async function createCompiler(options = {}) {
+		const gc = options.gc ?? GC_NONE;
+		validateGc(gc, options.compileArgs);
 		const source = resolveAssetSource(options, packaged);
 		const onLog = options.onLog ?? (() => {});
 		const onStatus = options.onStatus ?? (() => '');
@@ -54,7 +58,8 @@ export function createApi({ packaged, inflate }) {
 			onProgress: options.onProgress,
 			// A caller's toolchain links for us, and its lld is the same program this
 			// package would ship -- so that 7.8 MB is not fetched.
-			needLld: !callersToolchain
+			needLld: !callersToolchain,
+			gc
 		});
 
 		let assets = loaded.assets;
@@ -65,7 +70,7 @@ export function createApi({ packaged, inflate }) {
 		// `run()` is the one that has to keep the diagnostics.
 		const log = (stage) => (text, stream) =>
 			onLog(text, {
-				source: stage === 'compiling' ? 'crystal' : stage === 'linking' ? 'wasm-ld' : 'program',
+				source: stage === 'compiling' ? 'crystal' : stage === 'linking' ? 'wasm-ld' : stage === 'instrumenting' ? 'binaryen' : 'program',
 				stream,
 				stage
 			});
@@ -76,6 +81,7 @@ export function createApi({ packaged, inflate }) {
 
 			/** What the payload contained: how many standard library files, how many libraries. */
 			stats: loaded.counts,
+			gc,
 
 			/**
 			 * Compile and run a program.
@@ -120,6 +126,7 @@ export function createApi({ packaged, inflate }) {
 						toolchain: callersToolchain,
 						args: runOptions.args ?? options.args ?? [],
 						compileArgs: runOptions.compileArgs ?? options.compileArgs ?? [],
+						gc,
 						stdin: typeof input === 'string' ? input : new TextDecoder().decode(input),
 						onStage: onStatus,
 						onStdout: (text, stage) => {
@@ -142,17 +149,19 @@ export function createApi({ packaged, inflate }) {
 						exitCode: result.exitCode,
 						// `compileMs` is the whole build -- the compiler plus the link, which
 						// is what a caller waiting for a result is actually waiting for.
-						compileMs: Math.round(result.phases.compiling + result.phases.linking),
+						compileMs: Math.round(result.phases.compiling + result.phases.linking + (result.phases.instrumenting ?? 0)),
 						runMs: Math.round(result.phases.running)
 					};
 				} catch (error) {
 					// A failed build's own words are the message, already stripped of colour;
 					// our sentence is only there to say what failed when they are silent.
 					const diagnostics = stripAnsi(error?.diagnostics ?? '').trim();
-					const what = error?.stage === 'linking' ? 'Linking' : 'Compilation';
+					const what = error?.stage === 'linking' ? 'Linking' : error?.stage === 'instrumenting' ? 'GC instrumentation' : 'Compilation';
 					const errors = diagnostics
 						? diagnostics.split('\n')
-						: [`${what} failed: ${stripAnsi(error?.message ?? String(error))}`];
+						: [error?.stage === 'instrumenting'
+							? stripAnsi(error.message)
+							: `${what} failed: ${stripAnsi(error?.message ?? String(error))}`];
 					return {
 						ok: false,
 						stdout: '',

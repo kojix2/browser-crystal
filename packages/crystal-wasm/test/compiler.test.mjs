@@ -34,11 +34,11 @@ puts helper_value
 
 // A compiler is expensive to make (the 35 MB module is compiled on creation) and
 // reusable for any number of runs, so the tests share one.
-describe('@live-codes/crystal-wasm', () => {
+for (const gc of ['none', 'boehm-experimental']) describe(`@live-codes/crystal-wasm (${gc})`, () => {
 	let compiler;
 
 	before(async () => {
-		compiler = await createCompiler();
+		compiler = await createCompiler({ gc });
 	});
 
 	after(async () => {
@@ -48,7 +48,8 @@ describe('@live-codes/crystal-wasm', () => {
 	test('reads the assets that ship in the package', async () => {
 		assert.match(compiler.assetSource, /packaged with this library/);
 		assert.ok(compiler.stats.stdlib > 1000, `stdlib files: ${compiler.stats.stdlib}`);
-		assert.equal(compiler.stats.libs, Object.keys(ASSET_RECEIPTS).length - 3);
+		assert.equal(compiler.gc, gc);
+		assert.equal(compiler.stats.libs, Object.keys(ASSET_RECEIPTS).filter((name) => name.startsWith('lib/')).length + (gc === 'none' ? 0 : 1));
 	});
 
 	test('compiles, links and runs a program that raises, rescues and reads stdin', async () => {
@@ -131,10 +132,12 @@ describe('the asset receipts', () => {
 	test('the receipts cover the whole payload', () => {
 		const names = Object.keys(ASSET_RECEIPTS);
 		assert.deepEqual(
-			names.filter((name) => !name.startsWith('lib/')).sort(),
+			names.filter((name) => !name.startsWith('lib/') && !name.startsWith('gc/')).sort(),
 			['compiler.wasm.gz', 'lld.wasm.gz', 'stdlib.json.gz']
 		);
 		assert.equal(new Set(names).size, names.length);
+		assert.ok(names.includes('gc/libgc.a.gz'));
+		assert.ok(names.includes('gc/binaryen.mjs.gz'));
 	});
 });
 

@@ -1,0 +1,13 @@
+{
+  "bdwgc": {
+    "commit": "2aeff7b59a932039f24e988bb2251e8a8f6f3a11",
+    "version": "8.3.0",
+    "url": "https://codeload.github.com/bdwgc/bdwgc/tar.gz/2aeff7b59a932039f24e988bb2251e8a8f6f3a11",
+    "sha256": "82f2c82a6d64767441f87d838dda844e8d016a1b4925ed0f3de1ca8839f504d6"
+  },
+  "binaryen": {
+    "version": "132.0.0",
+    "url": "https://registry.npmjs.org/binaryen/-/binaryen-132.0.0.tgz",
+    "sha256": "6543555fb29bb92548f325c7dc18e9ab7dbb1215edda25993d1e3f71d85b8618"
+  }
+}

@@ -18,6 +18,8 @@ Nothing is uploaded, and no cross-origin isolation is required.
 - **Exceptions work**: `raise`/`rescue`/`ensure` on `wasm32-wasip1`, which is not true
   of upstream Crystal 1.22 and is the reason `build/crystal-wasm/` exists.
 - **stdin and argv** go to the program; further source files can be compiled with it.
+- **Experimental GC**: pass `gc: 'boehm-experimental'` to reclaim memory in generated
+  programs. It adds about 2.7 MB of optional assets. See [GC setup and limits](docs/GC.md).
 
 ## Use
 
@@ -127,13 +129,14 @@ Loads the assets (a 35 MB wasm module among them), so it is `async` and worth re
 | `baseUrl` | where the assets are served from. Required in a browser, optional in Node. |
 | `toolchain` | a toolchain from `@live-codes/clang-wasm`'s `createToolchain()`, to link through |
 | `compileArgs` | extra `crystal build` flags, for every run |
+| `gc` | `'none'` (default) or `'boehm-experimental'`; fixed for this compiler instance |
 | `args` | default program argv |
 | `onProgress` | asset loading, 0 to 1 |
 | `onLog` | the compiler's and the linker's own output, as `(text, { source, stream, stage })` |
 | `onOutput` | the program's output as it is written, as `(text, 'out' \| 'err')` |
 | `onStatus` | what is happening, for a status line |
 
-Returns `{ run, dispose, assetSource, stats }`.
+Returns `{ run, dispose, assetSource, stats, gc }`.
 
 ### `compiler.run(code, input?, options?)`
 
@@ -146,7 +149,8 @@ was passed in.
 
 ## What does not work
 
-- **Memory is never reclaimed.** `wasm32` selects Crystal's no-GC allocator.
+- **GC is opt-in.** The default allocator never reclaims memory. The experimental
+  mode supports collection and GC statistics; see [its limitations](docs/GC.md).
 - **No threads, sockets or subprocesses** in the compiled program: WASI preview 1 has no
   processes, and the program gets an empty filesystem.
 - **A fixed set of libraries**: `libc`, `libc++abi`, `libunwind`, PCRE2 and the WASI

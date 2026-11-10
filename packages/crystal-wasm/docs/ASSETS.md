@@ -1,7 +1,8 @@
 # The assets
 
-`assets/crystal/` is the payload this package loads: 12 files, ~23 MB gzipped (~69 MB
-raw). It is **built, not committed** — `assets/` is gitignored — and pinned by
+`assets/crystal/` is the payload this package loads: 12 base files, ~23 MB gzipped,
+plus 2 optional GC files (~2.7 MB). The generated assets are committed in this
+checkout and pinned by
 `src/asset-receipts.js`, which `scripts/write-receipts.mjs` writes from the bytes on
 disk. Every read is checked against those receipts, so a stale copy, a truncated
 download or a host serving something else is reported rather than compiled.
@@ -18,9 +19,12 @@ download or a host serving something else is reported rather than compiled.
 | `lib/libclang_rt.builtins.a.gz` | 0.5 MB | 0.13 MB | compiler builtins |
 | `lib/libpcre2-8.a.gz` | 0.4 MB | 0.11 MB | PCRE2, for `Regex` |
 | `lib/libwasi-emulated-{signal,mman,getpid,process-clocks}.a.gz` | 0.05 MB | 0.01 MB | what wasi-libc emulates |
+| `gc/binaryen.mjs.gz` | 14.8 MB | 2.63 MB | lazy Binaryen factory, loaded only with experimental GC |
+| `gc/libgc.a.gz` | 0.3 MB | 0.064 MB | single-threaded WASI collector, loaded only with experimental GC |
 
 The libraries are keyed the way the linker asks for them (`lib/libc.a`), because those
 names become paths in the linker's filesystem — see `src/loader.js`.
+GC source pins, rebuilding and validation are documented in [GC.md](GC.md).
 
 ## Rebuilding
 

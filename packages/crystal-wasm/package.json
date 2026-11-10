@@ -35,10 +35,12 @@
   },
   "scripts": {
     "assets": "bash build-assets.sh",
+    "assets:gc": "python3 scripts/build-gc-assets.py",
     "receipts": "node scripts/write-receipts.mjs",
     "build:iife": "node scripts/build-iife.mjs",
     "prepack": "node scripts/build-iife.mjs && node scripts/check-assets.mjs",
-    "test": "node --experimental-wasm-exnref --test"
+    "test": "node --experimental-wasm-exnref --test",
+    "test:browser": "node scripts/check-browser-gc.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"

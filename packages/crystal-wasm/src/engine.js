@@ -21,6 +21,7 @@ import {
 	WASI,
 	wasi as wasiDefs
 } from '../vendor/browser_wasi_shim/index.js';
+import { GC_BOEHM, GC_NONE, instrumentGc, validateGc } from './gc.js';
 
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
@@ -174,6 +175,12 @@ export const LINKER_ARGS = [
 	'-o', 'out.wasm'
 ];
 
+export function linkerArgs(gc = GC_NONE) {
+	return gc === GC_BOEHM
+		? [...LINKER_ARGS.slice(0, -2), '--fatal-warnings', '--stack-first', '-z', 'stack-size=1048576', '--export=__stack_pointer', '-lgc', ...LINKER_ARGS.slice(-2)]
+		: LINKER_ARGS;
+}
+
 const asFile = (data) =>
 	new File(typeof data === 'string' ? ENCODER.encode(data) : data);
 
@@ -284,7 +291,7 @@ async function runCommand(moduleOrBytes, { args, env = [], entries = [], stdin =
  * this needs from the toolchain are the ones that API documents: the compiled lld
  * module, a WASI command runner, and a way to read a file back out.
  */
-async function linkWithToolchain(toolchain, { object, libs, onStdout, onStderr }) {
+async function linkWithToolchain(toolchain, { object, libs, onStdout, onStderr, gc }) {
 	const runtime = toolchain.runtime;
 	const lld = await runtime.getModule(runtime.assetUrls.lld);
 
@@ -292,9 +299,10 @@ async function linkWithToolchain(toolchain, { object, libs, onStdout, onStderr }
 	for (const [path, bytes] of Object.entries(libs)) files.push({ path, contents: bytes });
 
 	// `args` is argv *without* the program name, and lld dispatches on argv[0].
+	const args = linkerArgs(gc);
 	const command = await toolchain.runCommand(lld, {
-		programName: LINKER_ARGS[0],
-		args: LINKER_ARGS.slice(1),
+		programName: args[0],
+		args: args.slice(1),
 		files,
 		stdin: () => null
 	});
@@ -303,7 +311,11 @@ async function linkWithToolchain(toolchain, { object, libs, onStdout, onStderr }
 	if (command.stdout) onStdout?.(stripAnsi(command.stdout), 'linking');
 	if (command.stderr) onStderr?.(stripAnsi(command.stderr), 'linking');
 
-	return { wasm: command.readFile('out.wasm'), exitCode: command.exitCode };
+	return {
+		wasm: command.exitCode === 0 ? command.readFile('out.wasm') : undefined,
+		exitCode: command.exitCode,
+		diagnostics: stripAnsi(command.stderr || command.stdout || '')
+	};
 }
 
 /**
@@ -320,7 +332,8 @@ async function linkWithToolchain(toolchain, { object, libs, onStdout, onStderr }
  * @param {string[]} [options.args] - the program's argv, after its own name
  * @param {string[]} [options.compileArgs] - extra compiler flags
  * @param {string} [options.stdin]
- * @param {(stage: string) => void} [options.onStage] - `compiling` | `linking` | `running`
+ * @param {'none'|'boehm-experimental'} [options.gc]
+ * @param {(stage: string) => void} [options.onStage] - `compiling` | `linking` | `instrumenting` | `running`
  * @param {(text: string, stage: string) => void} [options.onStdout]
  * @param {(text: string, stage: string) => void} [options.onStderr]
  * @returns {Promise<{ wasm: Uint8Array, stdout: string, stderr: string, exitCode: number, phases: object }>}
@@ -333,11 +346,14 @@ export async function compileAndRun({
 	toolchain = null,
 	args = [],
 	compileArgs = [],
+	gc = GC_NONE,
 	stdin = '',
 	onStage,
 	onStdout,
 	onStderr
 }) {
+	validateGc(gc, compileArgs);
+	if (gc === GC_BOEHM && (!assets.binaryen || !assets.libs['lib/libgc.a'])) throw new Error('GC assets have not been loaded');
 	const { compiler, lld, stdlib, libs } = assets;
 	const phases = {};
 
@@ -353,7 +369,7 @@ export async function compileAndRun({
 	for (const [path, text] of Object.entries(stdlib)) compilerEntries.push([`src/${path}`, text]);
 
 	const compiled = await runCommand(compiler, {
-		args: compilerArgs(compileArgs),
+		args: compilerArgs([...compileArgs, ...(gc === GC_BOEHM ? ['-Dwasm_gc_experimental'] : [])]),
 		env: ['CRYSTAL_PATH=/src'],
 		entries: compilerEntries,
 		onStdout,
@@ -363,7 +379,7 @@ export async function compileAndRun({
 	phases.compiling = performance.now() - started;
 
 	const object = compiled.root.contents.get('out.o.wasm')?.data;
-	if (!object) {
+	if (compiled.exitCode !== 0 || !object) {
 		// The compiler's own diagnostics are the useful message; this is the
 		// heading over them.
 		const error = new Error('compilation failed');
@@ -376,11 +392,12 @@ export async function compileAndRun({
 	started = at('linking');
 	let wasm;
 	if (toolchain) {
-		const linked = await linkWithToolchain(toolchain, { object, libs, onStdout, onStderr });
+		const linked = await linkWithToolchain(toolchain, { object, libs, onStdout, onStderr, gc });
 		wasm = linked.wasm ?? undefined;
-		if (!wasm) {
+		if (linked.exitCode !== 0 || !wasm) {
 			const error = new Error('linking failed');
 			error.stage = 'linking';
+			error.diagnostics = linked.diagnostics;
 			throw error;
 		}
 	} else {
@@ -388,14 +405,14 @@ export async function compileAndRun({
 		for (const [path, bytes] of Object.entries(libs)) linkerEntries.push([path, bytes]);
 
 		const linked = await runCommand(lld, {
-			args: LINKER_ARGS,
+			args: linkerArgs(gc),
 			entries: linkerEntries,
 			onStdout,
 			onStderr,
 			stage: 'linking'
 		});
 		wasm = linked.root.contents.get('out.wasm')?.data;
-		if (!wasm) {
+		if (linked.exitCode !== 0 || !wasm) {
 			const error = new Error('linking failed');
 			error.stage = 'linking';
 			error.diagnostics = stripAnsi(linked.stderr || linked.stdout);
@@ -403,6 +420,11 @@ export async function compileAndRun({
 		}
 	}
 	phases.linking = performance.now() - started;
+	if (gc === GC_BOEHM) {
+		started = at('instrumenting');
+		wasm = instrumentGc(assets.binaryen, wasm);
+		phases.instrumenting = performance.now() - started;
+	}
 
 	// 3. run ---------------------------------------------------------------
 	started = at('running');

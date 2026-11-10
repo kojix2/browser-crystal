@@ -28,6 +28,7 @@ substring of the old one need no marker.
 """
 import pathlib
 import sys
+from gc_patches import GC_PATCHES
 
 DOCS_SHIM_OLD = 'require "./doc/*"'
 DOCS_SHIM_NEW = '{% skip_file if flag?(:without_docs) %}\n\nrequire "./doc/*"'
@@ -607,6 +608,8 @@ PATCHES = [
     ("compiler/crystal/codegen/target.cr", CODEGEN_TARGET_EH_INIT_OLD, CODEGEN_TARGET_EH_INIT_NEW, None),
     ("compiler/crystal/codegen/target.cr", CODEGEN_TARGET_EH_METHOD_OLD, CODEGEN_TARGET_EH_METHOD_NEW, None),
 ]
+
+PATCHES += GC_PATCHES
 
 
 def main() -> int:

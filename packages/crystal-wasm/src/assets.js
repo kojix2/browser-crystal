@@ -94,6 +94,7 @@ function createHostedSource(options) {
 		key: baseUrl.href,
 		description: baseUrl.href,
 		baseUrl: baseUrl.href,
+		runtimeUrl: new URL('gc/binaryen.mjs', baseUrl).href,
 		async readAsset(name) {
 			const url = new URL(name, baseUrl);
 			const response = await fetch(url);
@@ -114,6 +115,7 @@ function createPackagedSource(packaged) {
 		key: `packaged\u0000${packaged.root.href}`,
 		description: `the assets packaged with this library (${packaged.root.href})`,
 		baseUrl: null,
+		runtimeUrl: new URL('gc/binaryen.mjs', packaged.root).href,
 		readAsset: async (name) => verifyReceipt(name, await packaged.readFile(name))
 	};
 }

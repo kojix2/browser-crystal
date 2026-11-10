@@ -1,5 +1,10 @@
 # browser-crystal
 
+This fork's `libgc` branch adds experimental Boehm GC to generated Wasm programs.
+Pass `gc: 'boehm-experimental'` to `createCompiler` to enable it; see
+[GC setup, validation and limits](packages/crystal-wasm/docs/GC.md).
+The project is forked from [live-codes/browser-crystal](https://github.com/live-codes/browser-crystal).
+
 Run **real Crystal in the browser**. There is one page —
 [`public/index.html`](public/index.html) — and it is the whole thing: edit Crystal, press Run, and
 the toolchain runs in the tab —
@@ -120,7 +125,7 @@ Verified in headless Chrome with `crossOriginIsolated === false`:
 | **A small first load** | 22 MB gzipped. 12 MB of that is the compiler — the whole compiler plus the whole standard library compiled to wasm — and 7.8 MB is the linker, which is a *generic* lld (ELF, COFF, Mach-O and wasm). A wasm-only lld was built from our own LLVM source and is *not* smaller: lld's LTO support is not separable by a flag. See [build/crystal-wasm/README.md](build/crystal-wasm/README.md#a-wasm-only-lld--built-and-not-adopted). |
 | **Files, clocks, threads, `fork`, subprocesses** in a *compiled program* | WASI preview 1 here has no sockets, and the demo gives a program an empty filesystem; the compiler itself has one, which is how it reads the stdlib. §5 |
 | **A program that ships its own shims** | the demo links a fixed list of libraries (`libc`, `libc++abi`, `libunwind`, PCRE2, the WASI emulation archives); anything else has to be linked in by hand |
-| **Memory being reclaimed** | wasm32 selects Crystal's no-GC allocator. Fine for a demo, not for a service. §1 |
+| **Memory being reclaimed by default** | `gc: 'boehm-experimental'` enables collection in generated programs; the default remains no GC. See [GC setup and limits](packages/crystal-wasm/docs/GC.md). |
 | **A Crystal other than 1.22.0** | the wasm-EH codegen patch and the `llc` build step are tuned to it; the compiler is pinned at 1.22.0. §3, §11 |
 | **Anything needing the browser to raise its stack** | V8 gives a wasm instance ~1 MB of native stack and a page cannot raise it, so the compiler is built `--release` (optimized frames fit in 700 KB); a debug build does not. [README §Resolution](build/crystal-wasm/README.md#resolution--the-wasm-catch-works) |
 

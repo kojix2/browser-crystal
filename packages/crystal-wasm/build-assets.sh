@@ -111,6 +111,12 @@ copy "$PCRE_LIB/libpcre2-8.a"                       "lib/libpcre2-8.a"
 copy "$CLANG_RT/libclang_rt.builtins.a"             "lib/libclang_rt.builtins.a"
 
 echo
+echo "=== experimental GC ==="
+GC_OUT=${GC_OUT:-/tmp/browser-crystal-gc}
+GC_OUT="$GC_OUT" WASI_SDK="$WASI_SDK" bash "$DIR/../../build/crystal-wasm/build-gc.sh" || exit 1
+python3 "$DIR/scripts/build-gc-assets.py" --libgc "$GC_OUT/build/libgc.a" --cache "$GC_OUT/downloads" --dest "$DEST" || exit 1
+
+echo
 echo "=== receipts ==="
 # Pins exactly these bytes; every read is checked against them, so this is the step
 # that says "these assets, and no others".
